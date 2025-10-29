@@ -1,0 +1,225 @@
+-- WAF Test Application - Complete Database Schema
+-- This file contains the complete database structure for the vulnerable application
+
+SET FOREIGN_KEY_CHECKS=0;
+DROP DATABASE IF EXISTS waf_test_db;
+CREATE DATABASE waf_test_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+USE waf_test_db;
+
+-- Users table - stores application users
+CREATE TABLE users (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    username VARCHAR(50) NOT NULL UNIQUE,
+    password VARCHAR(255) NOT NULL,
+    email VARCHAR(100),
+    full_name VARCHAR(100),
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_login TIMESTAMP NULL,
+    login_attempts INT DEFAULT 0,
+    account_locked_until TIMESTAMP NULL,
+    
+    INDEX idx_users_username (username),
+    INDEX idx_users_email (email),
+    INDEX idx_users_active (is_active)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- User sessions table - tracks active sessions
+CREATE TABLE user_sessions (
+    session_id VARCHAR(128) PRIMARY KEY,
+    user_id INT NOT NULL,
+    ip_address VARCHAR(45) NOT NULL,
+    user_agent TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    expires_at TIMESTAMP NULL,
+    
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    INDEX idx_sessions_user_id (user_id),
+    INDEX idx_sessions_expires (expires_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Comprehensive audit log for security monitoring
+CREATE TABLE audit_log (
+    log_id INT AUTO_INCREMENT PRIMARY KEY,
+    event_type VARCHAR(50) NOT NULL,
+    user_id INT NULL,
+    ip_address VARCHAR(45) NOT NULL,
+    user_agent TEXT,
+    description TEXT NOT NULL,
+    event_data JSON,
+    severity ENUM('LOW', 'MEDIUM', 'HIGH', 'CRITICAL') DEFAULT 'MEDIUM',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
+    INDEX idx_audit_event_type (event_type),
+    INDEX idx_audit_user_id (user_id),
+    INDEX idx_audit_ip_address (ip_address),
+    INDEX idx_audit_created_at (created_at),
+    INDEX idx_audit_severity (severity)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- WAF events table - specifically for ModSecurity events
+CREATE TABLE waf_events (
+    event_id INT AUTO_INCREMENT PRIMARY KEY,
+    modsec_rule_id VARCHAR(20),
+    rule_message TEXT,
+    matched_data TEXT,
+    client_ip VARCHAR(45),
+    request_method VARCHAR(10),
+    request_uri TEXT,
+    user_agent TEXT,
+    severity VARCHAR(20),
+    event_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    processed BOOLEAN DEFAULT FALSE,
+    
+    INDEX idx_waf_rule_id (modsec_rule_id),
+    INDEX idx_waf_client_ip (client_ip),
+    INDEX idx_waf_timestamp (event_timestamp),
+    INDEX idx_waf_processed (processed)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Application settings table
+CREATE TABLE app_settings (
+    setting_key VARCHAR(50) PRIMARY KEY,
+    setting_value TEXT,
+    description TEXT,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Insert default users with various password complexities
+INSERT INTO users (username, password, email, full_name, is_active) VALUES
+('admin', 'admin123', 'admin@example.com', 'System Administrator', TRUE),
+('john_doe', 'password123', 'john.doe@example.com', 'John Doe', TRUE),
+('test_user', 'testpass', 'test@example.com', 'Test User', TRUE),
+('jane_smith', 'Smith123!', 'jane.smith@example.com', 'Jane Smith', TRUE),
+('demo_user', 'DemoPass2024!', 'demo@example.com', 'Demo Account', TRUE),
+('inactive_user', 'inactive123', 'inactive@example.com', 'Inactive User', FALSE);
+
+-- Insert initial audit log entries
+INSERT INTO audit_log (event_type, user_id, ip_address, description, severity) VALUES
+('SYSTEM_STARTUP', NULL, '127.0.0.1', 'Application database initialized', 'LOW'),
+('USER_CREATED', 1, '127.0.0.1', 'Initial admin user created', 'MEDIUM'),
+('USER_LOGIN_SUCCESS', 1, '192.168.1.100', 'Successful administrator login', 'LOW'),
+('USER_LOGIN_FAILED', NULL, '192.168.1.101', 'Failed login attempt for unknown user', 'MEDIUM'),
+('PASSWORD_CHANGE', 2, '192.168.1.102', 'User changed password successfully', 'MEDIUM');
+
+-- Insert application settings
+INSERT INTO app_settings (setting_key, setting_value, description) VALUES
+('MAX_LOGIN_ATTEMPTS', '5', 'Maximum allowed failed login attempts before lockout'),
+('SESSION_TIMEOUT', '3600', 'Session timeout in seconds'),
+('PASSWORD_MIN_LENGTH', '8', 'Minimum password length requirement'),
+('WAF_ENABLED', 'true', 'Web Application Firewall enabled status'),
+('LOG_RETENTION_DAYS', '90', 'Number of days to keep audit logs');
+
+-- Insert sample WAF events for testing
+INSERT INTO waf_events (modsec_rule_id, rule_message, matched_data, client_ip, request_method, request_uri, severity) VALUES
+('100001', 'SQL Injection Attack Detected', "admin' OR '1'='1", '192.168.1.150', 'POST', '/sql-test-app/login.php', 'CRITICAL'),
+('100002', 'SQL Syntax Detected', 'UNION SELECT', '192.168.1.151', 'POST', '/sql-test-app/login.php', 'HIGH'),
+('100003', 'Comment Sequence Detected', '--', '192.168.1.152', 'GET', '/sql-test-app/search.php', 'MEDIUM');
+
+-- Create views for common queries
+CREATE VIEW user_login_stats AS
+SELECT 
+    u.username,
+    u.full_name,
+    COUNT(CASE WHEN al.event_type = 'USER_LOGIN_SUCCESS' THEN 1 END) as successful_logins,
+    COUNT(CASE WHEN al.event_type = 'USER_LOGIN_FAILED' THEN 1 END) as failed_logins,
+    MAX(al.created_at) as last_activity
+FROM users u
+LEFT JOIN audit_log al ON u.id = al.user_id
+GROUP BY u.id, u.username, u.full_name;
+
+CREATE VIEW waf_security_overview AS
+SELECT 
+    DATE(event_timestamp) as event_date,
+    severity,
+    COUNT(*) as event_count,
+    GROUP_CONCAT(DISTINCT modsec_rule_id) as rule_ids
+FROM waf_events
+GROUP BY DATE(event_timestamp), severity
+ORDER BY event_date DESC, severity;
+
+-- Create stored procedures for common operations
+DELIMITER //
+
+CREATE PROCEDURE LogUserLogin(IN p_user_id INT, IN p_ip_address VARCHAR(45), IN p_user_agent TEXT)
+BEGIN
+    INSERT INTO audit_log (event_type, user_id, ip_address, user_agent, description, severity)
+    VALUES ('USER_LOGIN_SUCCESS', p_user_id, p_ip_address, p_user_agent, 'User logged in successfully', 'LOW');
+    
+    UPDATE users SET last_login = NOW(), login_attempts = 0 WHERE id = p_user_id;
+END//
+
+CREATE PROCEDURE LogFailedLogin(IN p_username VARCHAR(50), IN p_ip_address VARCHAR(45), IN p_user_agent TEXT)
+BEGIN
+    DECLARE user_exists INT;
+    
+    SELECT COUNT(*) INTO user_exists FROM users WHERE username = p_username;
+    
+    IF user_exists > 0 THEN
+        UPDATE users SET login_attempts = login_attempts + 1 WHERE username = p_username;
+        
+        INSERT INTO audit_log (event_type, user_id, ip_address, user_agent, description, severity)
+        SELECT 'USER_LOGIN_FAILED', id, p_ip_address, p_user_agent, 
+               CONCAT('Failed login attempt for user: ', p_username), 'MEDIUM'
+        FROM users WHERE username = p_username;
+    ELSE
+        INSERT INTO audit_log (event_type, ip_address, user_agent, description, severity)
+        VALUES ('USER_LOGIN_FAILED', p_ip_address, p_user_agent, 
+                CONCAT('Failed login attempt for non-existent user: ', p_username), 'MEDIUM');
+    END IF;
+END//
+
+CREATE PROCEDURE GetSecurityReport(IN p_days INT)
+BEGIN
+    -- User activity summary
+    SELECT 'USER_ACTIVITY' as report_section,
+           COUNT(*) as total_events,
+           COUNT(DISTINCT user_id) as unique_users,
+           MIN(created_at) as period_start,
+           MAX(created_at) as period_end
+    FROM audit_log 
+    WHERE created_at >= DATE_SUB(NOW(), INTERVAL p_days DAY)
+    
+    UNION ALL
+    
+    -- WAF events summary
+    SELECT 'WAF_EVENTS' as report_section,
+           COUNT(*) as total_events,
+           COUNT(DISTINCT modsec_rule_id) as unique_rules,
+           MIN(event_timestamp) as period_start,
+           MAX(event_timestamp) as period_end
+    FROM waf_events
+    WHERE event_timestamp >= DATE_SUB(NOW(), INTERVAL p_days DAY)
+    
+    UNION ALL
+    
+    -- Security threat levels
+    SELECT 'THREAT_LEVELS' as report_section,
+           COUNT(*) as total_events,
+           SUM(CASE WHEN severity IN ('HIGH', 'CRITICAL') THEN 1 ELSE 0 END) as high_severity_events,
+           MIN(created_at) as period_start,
+           MAX(created_at) as period_end
+    FROM audit_log 
+    WHERE created_at >= DATE_SUB(NOW(), INTERVAL p_days DAY)
+       OR event_timestamp >= DATE_SUB(NOW(), INTERVAL p_days DAY);
+END//
+
+DELIMITER ;
+
+-- Create database user with appropriate privileges
+DROP USER IF EXISTS 'waf_app_user'@'localhost';
+CREATE USER 'waf_app_user'@'localhost' IDENTIFIED BY 'app_password_123';
+GRANT SELECT, INSERT, UPDATE ON waf_test_db.* TO 'waf_app_user'@'localhost';
+GRANT EXECUTE ON PROCEDURE waf_test_db.LogUserLogin TO 'waf_app_user'@'localhost';
+GRANT EXECUTE ON PROCEDURE waf_test_db.LogFailedLogin TO 'waf_app_user'@'localhost';
+GRANT EXECUTE ON PROCEDURE waf_test_db.GetSecurityReport TO 'waf_app_user'@'localhost';
+FLUSH PRIVILEGES;
+
+-- Display final setup information
+SELECT 'Database schema created successfully!' as message;
+SELECT COUNT(*) as user_count FROM users;
+SELECT COUNT(*) as audit_entries FROM audit_log;
+SELECT COUNT(*) as waf_events FROM waf_events;
+SELECT 'Setup completed at: ' AS status, NOW() as timestamp;

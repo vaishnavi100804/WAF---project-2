@@ -1,0 +1,239 @@
+<?php
+/**
+ * WAF Test Application - Dashboard
+ * Protected page that requires authentication
+ */
+
+session_start();
+include 'config.php';
+
+// Redirect to login if not authenticated
+if (!isset($_SESSION['user_id'])) {
+    header('Location: index.html');
+    exit();
+}
+
+// Get user information
+$user_id = $_SESSION['user_id'];
+$sql = "SELECT * FROM users WHERE id = $user_id";
+$result = $conn->query($sql);
+$user = $result->fetch_assoc();
+
+// Get recent login history
+$history_sql = "SELECT * FROM audit_log WHERE user_id = $user_id ORDER BY created_at DESC LIMIT 5";
+$history_result = $conn->query($history_sql);
+
+// Get security statistics
+$stats_sql = "SELECT 
+    COUNT(*) as total_logins,
+    MAX(created_at) as last_login,
+    (SELECT COUNT(*) FROM audit_log WHERE event_type = 'USER_LOGIN_FAILED' AND user_id = $user_id) as failed_attempts
+    FROM audit_log 
+    WHERE event_type = 'USER_LOGIN_SUCCESS' AND user_id = $user_id";
+$stats_result = $conn->query($stats_sql);
+$stats = $stats_result->fetch_assoc();
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - WAF Test App</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f5f5f5;
+            color: #333;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px 0;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 20px;
+        }
+        .nav {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .logo {
+            font-size: 24px;
+            font-weight: bold;
+        }
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        .btn-logout {
+            background: rgba(255,255,255,0.2);
+            color: white;
+            border: 1px solid rgba(255,255,255,0.3);
+            padding: 8px 16px;
+            border-radius: 5px;
+            cursor: pointer;
+            text-decoration: none;
+        }
+        .btn-logout:hover {
+            background: rgba(255,255,255,0.3);
+        }
+        .main-content {
+            padding: 40px 0;
+        }
+        .welcome-section {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 30px;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .stat-card {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+        .stat-number {
+            font-size: 2em;
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+        .stat-label {
+            color: #666;
+            font-size: 0.9em;
+        }
+        .activity-section {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .activity-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+        .activity-table th,
+        .activity-table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+        .activity-table th {
+            background: #f8f9fa;
+            font-weight: 600;
+        }
+        .security-note {
+            background: #fff3e0;
+            border-left: 4px solid #ff9800;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="container">
+            <div class="nav">
+                <div class="logo">🔒 SecureDashboard</div>
+                <div class="user-info">
+                    <span>Welcome, <?php echo htmlspecialchars($user['full_name']); ?></span>
+                    <a href="logout.php" class="btn-logout">Logout</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="main-content">
+            <div class="welcome-section">
+                <h1>Welcome to Your Dashboard</h1>
+                <p>This is a protected area of the WAF Test Application.</p>
+                
+                <div class="security-note">
+                    <strong>Security Information:</strong> This application is protected by ModSecurity WAF rules 
+                    that monitor and block SQL injection attempts and other web attacks.
+                </div>
+            </div>
+
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-number"><?php echo $stats['total_logins'] ?? 0; ?></div>
+                    <div class="stat-label">Total Logins</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number"><?php echo $stats['failed_attempts'] ?? 0; ?></div>
+                    <div class="stat-label">Failed Attempts</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number">
+                        <?php echo $stats['last_login'] ? date('M j', strtotime($stats['last_login'])) : 'Never'; ?>
+                    </div>
+                    <div class="stat-label">Last Login</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number">WAF</div>
+                    <div class="stat-label">Protection Active</div>
+                </div>
+            </div>
+
+            <div class="activity-section">
+                <h2>Recent Activity</h2>
+                <table class="activity-table">
+                    <thead>
+                        <tr>
+                            <th>Event Type</th>
+                            <th>Description</th>
+                            <th>IP Address</th>
+                            <th>Timestamp</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php if ($history_result && $history_result->num_rows > 0): ?>
+                            <?php while($row = $history_result->fetch_assoc()): ?>
+                                <tr>
+                                    <td><?php echo htmlspecialchars($row['event_type']); ?></td>
+                                    <td><?php echo htmlspecialchars($row['description']); ?></td>
+                                    <td><?php echo htmlspecialchars($row['ip_address']); ?></td>
+                                    <td><?php echo date('Y-m-d H:i:s', strtotime($row['created_at'])); ?></td>
+                                </tr>
+                            <?php endwhile; ?>
+                        <?php else: ?>
+                            <tr>
+                                <td colspan="4" style="text-align: center;">No recent activity found.</td>
+                            </tr>
+                        <?php endif; ?>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="security-note">
+                <h3>WAF Testing Information</h3>
+                <p>This application is designed to test Web Application Firewall rules. The login page contains 
+                intentionally vulnerable code to demonstrate SQL injection protection.</p>
+                <p><strong>Note:</strong> In a production environment, always use prepared statements and 
+                parameterized queries to prevent SQL injection.</p>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
