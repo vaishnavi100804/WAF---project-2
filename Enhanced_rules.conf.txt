@@ -1,0 +1,387 @@
+# WAF Rule Development Lab - Enhanced Security Rules
+# Additional protection rules for comprehensive web application security
+# Rule ID range: 101000-101999
+
+# =============================================================================
+# CROSS-SITE SCRIPTING (XSS) PROTECTION RULES
+# =============================================================================
+
+# Basic XSS Detection - Script Tags and Event Handlers
+SecRule ARGS_NAMES|ARGS|REQUEST_HEADERS|REQUEST_BODY "@rx (?i)<script[^>]*>|javascript:|onclick\s*=|onload\s*=|onerror\s*=|onmouseover\s*=|eval\s*\(\s*|alert\s*\(\s*|document\.cookie" \
+    "id:101001,\
+    phase:2,\
+    block,\
+    msg:'Cross-Site Scripting (XSS) Attack Attempt Detected',\
+    logdata:'Matched Data: %{MATCHED_VAR}',\
+    tag:'custom-waf-lab',\
+    tag:'attack-xss',\
+    tag:'OWASP_TOP_10/A3',\
+    severity:'CRITICAL',\
+    setvar:'tx.anomaly_score=+%{tx.critical_anomaly_score}',\
+    setvar:'tx.xss_score=+%{tx.critical_anomaly_score}'"
+
+# XSS using HTML Entities and Encoding
+SecRule ARGS_NAMES|ARGS|REQUEST_BODY "@rx &(lt|gt|quot|#x?[0-9a-fA-F]+);.*<script|javascript" \
+    "id:101002,\
+    phase:2,\
+    block,\
+    msg:'Encoded XSS Attack Attempt Detected',\
+    logdata:'Matched Data: %{MATCHED_VAR}',\
+    tag:'custom-waf-lab',\
+    tag:'attack-xss',\
+    tag:'OWASP_TOP_10/A3',\
+    severity:'HIGH',\
+    setvar:'tx.anomaly_score=+%{tx.critical_anomaly_score}',\
+    setvar:'tx.xss_score=+%{tx.critical_anomaly_score}'"
+
+# =============================================================================
+# LOCAL FILE INCLUSION (LFI) PROTECTION
+# =============================================================================
+
+# Directory Traversal Attacks
+SecRule ARGS_NAMES|ARGS|REQUEST_URI "@rx (\.\./|\.\.\\|\.\.%2f|\.\.%5c|%2e%2e%2f|%2e%2e%5c)" \
+    "id:101003,\
+    phase:2,\
+    block,\
+    msg:'Directory Traversal Attack Attempt Detected',\
+    logdata:'Matched Data: %{MATCHED_VAR}',\
+    tag:'custom-waf-lab',\
+    tag:'attack-lfi',\
+    tag:'OWASP_TOP_10/A5',\
+    severity:'CRITICAL',\
+    setvar:'tx.anomaly_score=+%{tx.critical_anomaly_score}',\
+    setvar:'tx.lfi_score=+%{tx.critical_anomaly_score}'"
+
+# PHP Wrapper Attacks
+SecRule ARGS_NAMES|ARGS|REQUEST_URI "@rx (php://|phar://|zip://|data://|expect://)" \
+    "id:101004,\
+    phase:2,\
+    block,\
+    msg:'PHP Wrapper Attack Attempt Detected',\
+    logdata:'Matched Data: %{MATCHED_VAR}',\
+    tag:'custom-waf-lab',\
+    tag:'attack-lfi',\
+    tag:'OWASP_TOP_10/A5',\
+    severity:'CRITICAL',\
+    setvar:'tx.anomaly_score=+%{tx.critical_anomaly_score}',\
+    setvar:'tx.lfi_score=+%{tx.critical_anomaly_score}'"
+
+# =============================================================================
+# REMOTE CODE EXECUTION (RCE) PROTECTION
+# =============================================================================
+
+# System Command Injection
+SecRule ARGS_NAMES|ARGS|REQUEST_BODY "@rx ([|&;`$\\n\\r]|\\|\\||&&)(\\s*)(ls|cat|id|whoami|pwd|echo|wget|curl|nc|netcat|bash|sh|python|perl|php|ruby)" \
+    "id:101005,\
+    phase:2,\
+    block,\
+    msg:'Command Injection Attack Attempt Detected',\
+    logdata:'Matched Data: %{MATCHED_VAR}',\
+    tag:'custom-waf-lab',\
+    tag:'attack-rce',\
+    tag:'OWASP_TOP_10/A1',\
+    severity:'CRITICAL',\
+    setvar:'tx.anomaly_score=+%{tx.critical_anomaly_score}',\
+    setvar:'tx.rce_score=+%{tx.critical_anomaly_score}'"
+
+# PHP Code Injection
+SecRule ARGS_NAMES|ARGS|REQUEST_BODY "@rx (\\$_(GET|POST|REQUEST|COOKIE|SERVER)|system\\s*\\(|exec\\s*\\(|shell_exec\\s*\\(|passthru\\s*\\(|eval\\s*\\(|assert\\s*\\()" \
+    "id:101006,\
+    phase:2,\
+    block,\
+    msg:'PHP Code Injection Attempt Detected',\
+    logdata:'Matched Data: %{MATCHED_VAR}',\
+    tag:'custom-waf-lab',\
+    tag:'attack-rce',\
+    tag:'OWASP_TOP_10/A1',\
+    severity:'CRITICAL',\
+    setvar:'tx.anomaly_score=+%{tx.critical_anomaly_score}',\
+    setvar:'tx.rce_score=+%{tx.critical_anomaly_score}'"
+
+# =============================================================================
+# SECURITY SCANNER DETECTION
+# =============================================================================
+
+# Common Security Scanner User Agents
+SecRule REQUEST_HEADERS:User-Agent "@rx (sqlmap|nikto|metasploit|nessus|acunetix|netsparker|w3af|burpsuite|owasp|nmap|zap)" \
+    "id:101007,\
+    phase:1,\
+    block,\
+    msg:'Security Scanner Detected by User-Agent',\
+    logdata:'Matched User-Agent: %{MATCHED_VAR}',\
+    tag:'custom-waf-lab',\
+    tag:'attack-scanner',\
+    tag:'REQUEST-913-SCANNER-DETECTION',\
+    severity:'HIGH',\
+    setvar:'tx.anomaly_score=+%{tx.critical_anomaly_score}'"
+
+# Scanner-like Behavior Patterns
+SecRule REQUEST_URI "@rx (union%20select|'%20or%20'1'='1|/etc/passwd|/bin/ls|../etc/passwd)" \
+    "id:101008,\
+    phase:1,\
+    block,\
+    msg:'Common Attack Pattern Detected in URI',\
+    logdata:'Matched URI: %{MATCHED_VAR}',\
+    tag:'custom-waf-lab',\
+    tag:'attack-scanner',\
+    severity:'HIGH',\
+    setvar:'tx.anomaly_score=+%{tx.critical_anomaly_score}'"
+
+# =============================================================================
+# PROTOCOL AND REQUEST VALIDATION
+# =============================================================================
+
+# Request Method Validation
+SecRule REQUEST_METHOD "!@rx ^(GET|HEAD|POST|OPTIONS)$" \
+    "id:101009,\
+    phase:1,\
+    block,\
+    msg:'Invalid HTTP Method Used',\
+    logdata:'Method: %{MATCHED_VAR}',\
+    tag:'custom-waf-lab',\
+    tag:'protocol-violation',\
+    severity:'HIGH',\
+    setvar:'tx.anomaly_score=+%{tx.critical_anomaly_score}'"
+
+# Content-Length Header Validation
+SecRule REQUEST_HEADERS:Content-Length "!@rx ^[0-9]{1,10}$" \
+    "id:101010,\
+    phase:1,\
+    block,\
+    msg:'Invalid Content-Length Header',\
+    logdata:'Content-Length: %{MATCHED_VAR}',\
+    tag:'custom-waf-lab',\
+    tag:'protocol-violation',\
+    severity:'MEDIUM',\
+    setvar:'tx.anomaly_score=+%{tx.error_anomaly_score}'"
+
+# =============================================================================
+# APPLICATION-SPECIFIC BUSINESS LOGIC RULES
+# =============================================================================
+
+# Username Format Validation
+SecRule ARGS:username "!@rx ^[a-zA-Z0-9_]{3,20}$" \
+    "id:101011,\
+    phase:2,\
+    block,\
+    msg:'Invalid Username Format',\
+    logdata:'Username: %{MATCHED_VAR}',\
+    tag:'custom-waf-lab',\
+    tag:'application-logic',\
+    severity:'MEDIUM',\
+    setvar:'tx.anomaly_score=+%{tx.warning_anomaly_score}'"
+
+# Password Length Validation
+SecRule ARGS:password "@lt 3" \
+    "id:101012,\
+    phase:2,\
+    block,\
+    msg:'Password Too Short',\
+    logdata:'Password Length: %{MATCHED_VAR_LENGTH}',\
+    tag:'custom-waf-lab',\
+    tag:'application-logic',\
+    severity:'MEDIUM',\
+    setvar:'tx.anomaly_score=+%{tx.warning_anomaly_score}'"
+
+# Email Format Validation
+SecRule ARGS:email "!@rx ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$" \
+    "id:101013,\
+    phase:2,\
+    block,\
+    msg:'Invalid Email Format',\
+    logdata:'Email: %{MATCHED_VAR}',\
+    tag:'custom-waf-lab',\
+    tag:'application-logic',\
+    severity:'MEDIUM',\
+    setvar:'tx.anomaly_score=+%{tx.warning_anomaly_score}'"
+
+# =============================================================================
+# GEO-LOCATION AND IP REPUTATION RULES
+# =============================================================================
+
+# Block Specific High-Risk IP Ranges (Example)
+SecRule REMOTE_ADDR "@ipMatch 192.168.100.100, 10.0.0.100" \
+    "id:101014,\
+    phase:1,\
+    block,\
+    msg:'Access from Blocked IP Address',\
+    logdata:'IP: %{REMOTE_ADDR}',\
+    tag:'custom-waf-lab',\
+    tag:'access-control',\
+    severity:'CRITICAL'"
+
+# Country Blocking (Example - Russia)
+SecRule GEO:COUNTRY_CODE "@streq RU" \
+    "id:101015,\
+    phase:1,\
+    block,\
+    msg:'Access from Blocked Country',\
+    logdata:'Country: %{GEO:COUNTRY_NAME}',\
+    tag:'custom-waf-lab',\
+    tag:'access-control',\
+    severity:'HIGH'"
+
+# =============================================================================
+# RATE LIMITING AND BRUTE FORCE PROTECTION
+# =============================================================================
+
+# Login Rate Limiting
+SecRule REQUEST_FILENAME "@streq /sql-test-app/login.php" \
+    "id:101016,\
+    phase:1,\
+    pass,\
+    nolog,\
+    setvar:'IP:LOGIN_ATTEMPTS=+1',\
+    expirevar:'IP:LOGIN_ATTEMPTS=3600'"
+
+SecRule IP:LOGIN_ATTEMPTS "@gt 5" \
+    "id:101017,\
+    phase:2,\
+    block,\
+    msg:'Too Many Login Attempts - Possible Brute Force Attack',\
+    logdata:'Attempts: %{IP:LOGIN_ATTEMPTS}',\
+    tag:'custom-waf-lab',\
+    tag:'attack-brute-force',\
+    severity:'HIGH',\
+    setvar:'tx.anomaly_score=+%{tx.critical_anomaly_score}'"
+
+# General Request Rate Limiting
+SecRule REQUEST_BASENAME "@rx \.(php|html)$" \
+    "id:101018,\
+    phase:1,\
+    pass,\
+    nolog,\
+    setvar:'IP:REQUEST_COUNT=+1',\
+    expirevar:'IP:REQUEST_COUNT=60'"
+
+SecRule IP:REQUEST_COUNT "@gt 100" \
+    "id:101019,\
+    phase:2,\
+    block,\
+    msg:'Too Many Requests - Possible DoS Attempt',\
+    logdata:'Requests: %{IP:REQUEST_COUNT}',\
+    tag:'custom-waf-lab',\
+    tag:'attack-dos',\
+    severity:'HIGH',\
+    setvar:'tx.anomaly_score=+%{tx.critical_anomaly_score}'"
+
+# =============================================================================
+# DATA LEAKAGE PREVENTION
+# =============================================================================
+
+# Database Error Message Detection
+SecRule RESPONSE_BODY "@rx (mysql_fetch_array|mysqli_fetch_array|ORA-[0-9]|Microsoft OLE DB|PostgreSQL.*ERROR|SQLServer.*Driver)" \
+    "id:101020,\
+    phase:4,\
+    block,\
+    msg:'Database Error Message Detected in Response',\
+    logdata:'Matched: %{MATCHED_VAR}',\
+    tag:'custom-waf-lab',\
+    tag:'information-leakage',\
+    severity:'MEDIUM',\
+    setvar:'tx.anomaly_score=+%{tx.warning_anomaly_score}'"
+
+# PHP Error Message Detection
+SecRule RESPONSE_BODY "@rx (Warning:|Notice:|Fatal error:|PHP Warning|PHP Notice)" \
+    "id:101021,\
+    phase:4,\
+    block,\
+    msg:'PHP Error Message Detected in Response',\
+    logdata:'Matched: %{MATCHED_VAR}',\
+    tag:'custom-waf-lab',\
+    tag:'information-leakage',\
+    severity:'MEDIUM',\
+    setvar:'tx.anomaly_score=+%{tx.warning_anomaly_score}'"
+
+# =============================================================================
+# ADVANCED THREAT DETECTION
+# =============================================================================
+
+# Unicode Attack Detection
+SecRule ARGS_NAMES|ARGS|REQUEST_BODY "@rx %u[0-9a-fA-F]{4}|\\x[0-9a-fA-F]{2}" \
+    "id:101022,\
+    phase:2,\
+    block,\
+    msg:'Unicode Encoding Detected - Possible Obfuscation Attempt',\
+    logdata:'Matched: %{MATCHED_VAR}',\
+    tag:'custom-waf-lab',\
+    tag:'attack-obfuscation',\
+    severity:'HIGH',\
+    setvar:'tx.anomaly_score=+%{tx.critical_anomaly_score}'"
+
+# Double Encoding Detection
+SecRule ARGS_NAMES|ARGS|REQUEST_URI "@rx %25[0-9a-fA-F]{2}" \
+    "id:101023,\
+    phase:2,\
+    block,\
+    msg:'Double URL Encoding Detected',\
+    logdata:'Matched: %{MATCHED_VAR}',\
+    tag:'custom-waf-lab',\
+    tag:'attack-obfuscation',\
+    severity:'HIGH',\
+    setvar:'tx.anomaly_score=+%{tx.critical_anomaly_score}'"
+
+# =============================================================================
+# SESSION SECURITY RULES
+# =============================================================================
+
+# Session Fixation Detection
+SecRule &ARGS:PHPSESSID "@gt 0" \
+    "id:101024,\
+    phase:2,\
+    block,\
+    msg:'Session ID in URL Parameters Detected',\
+    logdata:'Session ID in URL',\
+    tag:'custom-waf-lab',\
+    tag:'attack-session-fixation',\
+    severity:'MEDIUM',\
+    setvar:'tx.anomaly_score=+%{tx.warning_anomaly_score}'"
+
+# =============================================================================
+# CUSTOM ANOMALY SCORING CONFIGURATION
+# =============================================================================
+
+# Initialize enhanced scoring variables
+SecAction \
+    "id:101900,\
+    phase:1,\
+    nolog,\
+    pass,\
+    t:none,\
+    setvar:'tx.xss_score=0',\
+    setvar:'tx.lfi_score=0',\
+    setvar:'tx.rce_score=0',\
+    setvar:'tx.overall_attack_score=0'"
+
+# Enhanced blocking threshold
+SecRule TX:OVERALL_ATTACK_SCORE "@ge 15" \
+    "id:101999,\
+    phase:2,\
+    deny,\
+    msg:'Enhanced Security Threshold Exceeded',\
+    logdata:'Attack Score: %{TX.OVERALL_ATTACK_SCORE}',\
+    tag:'custom-waf-lab',\
+    tag:'anomaly-evaluation',\
+    severity:'CRITICAL'"
+
+# =============================================================================
+# RULE DOCUMENTATION
+# =============================================================================
+#
+# Enhanced Rules Coverage:
+# 101001-101002: XSS Protection
+# 101003-101004: LFI/RFI Protection  
+# 101005-101006: RCE Protection
+# 101007-101008: Scanner Detection
+# 101009-101010: Protocol Validation
+# 101011-101013: Business Logic
+# 101014-101015: Geo/IP Blocking
+# 101016-101019: Rate Limiting
+# 101020-101021: Data Leakage
+# 101022-101023: Advanced Obfuscation
+# 101024: Session Security
+#
+# Note: These rules should be tuned based on specific application requirements
+# and tested thoroughly before production deployment.
+#
+# =============================================================================

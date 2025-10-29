@@ -1,0 +1,278 @@
+# WAF Rule Development Lab - Custom SQL Injection Rules
+# Comprehensive rule set for SQL injection protection
+# Rule ID range: 100000-100999
+
+# =============================================================================
+# CUSTOM SQL INJECTION DETECTION RULES
+# =============================================================================
+
+# Main SQL Injection Detection Rule for Login Forms
+SecRule REQUEST_FILENAME "@rx /sql-test-app/login\.php$" \
+    "id:100001,\
+    phase:2,\
+    block,\
+    msg:'Custom SQL Injection Attack Detected in Login Form',\
+    logdata:'Matched Data: %{TX.0} found in %{MATCHED_VAR_NAME}',\
+    tag:'custom-waf-lab',\
+    tag:'application-multi',\
+    tag:'language-php',\
+    tag:'platform-multi',\
+    tag:'attack-sqli',\
+    tag:'OWASP_CRS/WEB_ATTACK/SQL_INJECTION',\
+    tag:'OWASP_TOP_10/A1',\
+    tag:'PCI/6.5.2',\
+    tag:'WASCTC/WASC-19',\
+    severity:'CRITICAL',\
+    ver:'SQLi-Rule/1.0.0',\
+    setvar:'tx.anomaly_score=+%{tx.critical_anomaly_score}',\
+    setvar:'tx.sql_injection_score=+%{tx.critical_anomaly_score}',\
+    setvar:'tx.msg=%{rule.msg}',\
+    chain"
+    SecRule ARGS:username|ARGS:password "@detectSQLi" \
+        "setvar:'tx.inbound_tx_msg=%{rule.msg}',\
+        setvar:'tx.inbound_anomaly_score=%{tx.anomaly_score}'"
+
+# Enhanced SQL Syntax Detection
+SecRule ARGS_NAMES|ARGS|REQUEST_BODY "@rx (?i)(\bunion\s+select\b|\binsert\s+into\b|\bupdate\s+set\b|\bdelete\s+from\b|\bdrop\s+table\b|\bcreate\s+table\b|\balter\s+table\b|\bexec\s+\(\s*|\bexecute\s+\(\s*|\bselect\b.*\bfrom\b|\bwhere\b.*=.*\b(select\b|\bdatabase\s*\(\s*\)))" \
+    "id:100002,\
+    phase:2,\
+    block,\
+    msg:'SQL Syntax Keywords Detected in User Input',\
+    logdata:'Matched Data: %{MATCHED_VAR}',\
+    tag:'custom-waf-lab',\
+    tag:'attack-sqli',\
+    tag:'OWASP_TOP_10/A1',\
+    severity:'CRITICAL',\
+    setvar:'tx.anomaly_score=+%{tx.critical_anomaly_score}',\
+    setvar:'tx.sql_injection_score=+%{tx.critical_anomaly_score}'"
+
+# SQL Comment and Operator Detection
+SecRule ARGS_NAMES|ARGS|REQUEST_BODY "@rx (?i)(--\s*$|#.*$|\/\*.*\*\/|;\s*$|\bwaitfor\s+delay\b|\bsleep\s*\(\s*|\bbenchmark\s*\(\s*|\bchar\s*\(\s*|\bconcat\s*\(\s*)" \
+    "id:100003,\
+    phase:2,\
+    block,\
+    msg:'SQL Comment Sequences or Dangerous Operators Detected',\
+    logdata:'Matched Data: %{MATCHED_VAR}',\
+    tag:'custom-waf-lab',\
+    tag:'attack-sqli',\
+    tag:'OWASP_TOP_10/A1',\
+    severity:'CRITICAL',\
+    setvar:'tx.anomaly_score=+%{tx.critical_anomaly_score}',\
+    setvar:'tx.sql_injection_score=+%{tx.critical_anomaly_score}'"
+
+# Tautology Attack Detection (OR '1'='1 patterns)
+SecRule ARGS_NAMES|ARGS|REQUEST_BODY "@rx (?i)(\bor\b\s*['\"]?\s*1\s*['\"]?\s*=\s*['\"]?\s*1|\band\b\s*['\"]?\s*1\s*['\"]?\s*=\s*['\"]?\s*1|\b1\s*=\s*1\b|\b'a'\s*=\s*'a')" \
+    "id:100004,\
+    phase:2,\
+    block,\
+    msg:'SQL Tautology Attack Pattern Detected',\
+    logdata:'Matched Data: %{MATCHED_VAR}',\
+    tag:'custom-waf-lab',\
+    tag:'attack-sqli',\
+    tag:'OWASP_TOP_10/A1',\
+    severity:'CRITICAL',\
+    setvar:'tx.anomaly_score=+%{tx.critical_anomaly_score}',\
+    setvar:'tx.sql_injection_score=+%{tx.critical_anomaly_score}'"
+
+# Database Function and Information Schema Detection
+SecRule ARGS_NAMES|ARGS|REQUEST_BODY "@rx (?i)(\binformation_schema\b|\bsys\.|mysql\.|\bpg_catalog\b|\bversion\s*\(\s*\)|\buser\s*\(\s*\)|\bdatabase\s*\(\s*\)|\b@@version\b|\b@@datadir\b)" \
+    "id:100005,\
+    phase:2,\
+    block,\
+    msg:'Database Information Gathering Attempt Detected',\
+    logdata:'Matched Data: %{MATCHED_VAR}',\
+    tag:'custom-waf-lab',\
+    tag:'attack-sqli',\
+    tag:'OWASP_TOP_10/A1',\
+    severity:'HIGH',\
+    setvar:'tx.anomaly_score=+%{tx.critical_anomaly_score}',\
+    setvar:'tx.sql_injection_score=+%{tx.critical_anomaly_score}'"
+
+# Hexadecimal and Binary Encoding Detection
+SecRule ARGS_NAMES|ARGS|REQUEST_BODY "@rx 0x[0-9a-fA-F]{4,}|x'[0-9a-fA-F]{2,}'" \
+    "id:100006,\
+    phase:2,\
+    block,\
+    msg:'Hexadecimal or Binary Encoding Detected - Possible SQLi Obfuscation',\
+    logdata:'Matched Data: %{MATCHED_VAR}',\
+    tag:'custom-waf-lab',\
+    tag:'attack-sqli',\
+    tag:'OWASP_TOP_10/A1',\
+    severity:'HIGH',\
+    setvar:'tx.anomaly_score=+%{tx.critical_anomaly_score}',\
+    setvar:'tx.sql_injection_score=+%{tx.critical_anomaly_score}'"
+
+# URL Encoding Bypass Attempt Detection
+SecRule ARGS_NAMES|ARGS|REQUEST_BODY "@rx %27|%20or%20|%20and%20|%20union%20|%20select%20" \
+    "id:100007,\
+    phase:2,\
+    block,\
+    msg:'URL Encoded SQL Injection Attempt Detected',\
+    logdata:'Matched Data: %{MATCHED_VAR}',\
+    tag:'custom-waf-lab',\
+    tag:'attack-sqli',\
+    tag:'OWASP_TOP_10/A1',\
+    severity:'HIGH',\
+    setvar:'tx.anomaly_score=+%{tx.critical_anomaly_score}',\
+    setvar:'tx.sql_injection_score=+%{tx.critical_anomaly_score}'"
+
+# Stacked Query Detection
+SecRule ARGS_NAMES|ARGS|REQUEST_BODY "@rx ;\s*(select|insert|update|delete|drop|create|alter)" \
+    "id:100008,\
+    phase:2,\
+    block,\
+    msg:'Stacked SQL Query Attempt Detected',\
+    logdata:'Matched Data: %{MATCHED_VAR}',\
+    tag:'custom-waf-lab',\
+    tag:'attack-sqli',\
+    tag:'OWASP_TOP_10/A1',\
+    severity:'CRITICAL',\
+    setvar:'tx.anomaly_score=+%{tx.critical_anomaly_score}',\
+    setvar:'tx.sql_injection_score=+%{tx.critical_anomaly_score}'"
+
+# Boolean-Based Blind SQLi Detection
+SecRule ARGS_NAMES|ARGS|REQUEST_BODY "@rx (?i)(\band\b\s*\d+\s*=\s*\d+|\bor\b\s*\d+\s*=\s*\d+|\bcase\s+when\b|\bif\s*\(\s*)" \
+    "id:100009,\
+    phase:2,\
+    block,\
+    msg:'Boolean-Based Blind SQL Injection Pattern Detected',\
+    logdata:'Matched Data: %{MATCHED_VAR}',\
+    tag:'custom-waf-lab',\
+    tag:'attack-sqli',\
+    tag:'OWASP_TOP_10/A1',\
+    severity:'HIGH',\
+    setvar:'tx.anomaly_score=+%{tx.critical_anomaly_score}',\
+    setvar:'tx.sql_injection_score=+%{tx.critical_anomaly_score}'"
+
+# Time-Based Blind SQLi Detection
+SecRule ARGS_NAMES|ARGS|REQUEST_BODY "@rx (?i)(\bsleep\s*\(\s*\d+\s*\)|\bwaitfor\s+delay\s+'\d+\b|\bpg_sleep\s*\(\s*\d+\s*\)|\bdbms_pipe\.receive_message\s*\(\s*)" \
+    "id:100010,\
+    phase:2,\
+    block,\
+    msg:'Time-Based Blind SQL Injection Pattern Detected',\
+    logdata:'Matched Data: %{MATCHED_VAR}',\
+    tag:'custom-waf-lab',\
+    tag:'attack-sqli',\
+    tag:'OWASP_TOP_10/A1',\
+    severity:'HIGH',\
+    setvar:'tx.anomaly_score=+%{tx.critical_anomaly_score}',\
+    setvar:'tx.sql_injection_score=+%{tx.critical_anomaly_score}'"
+
+# Application-Specific Rule: Protect Login Endpoint
+SecRule REQUEST_FILENAME "@streq /sql-test-app/login.php" \
+    "id:100011,\
+    phase:1,\
+    pass,\
+    msg:'Login endpoint accessed - initializing protection',\
+    tag:'custom-waf-lab',\
+    tag:'application-login',\
+    severity:'INFO',\
+    setvar:'tx.login_attempt=1'"
+
+# Rate Limiting for Login Attempts (Basic)
+SecRule REQUEST_FILENAME "@streq /sql-test-app/login.php" \
+    "id:100012,\
+    phase:2,\
+    block,\
+    msg:'Excessive login attempts detected',\
+    tag:'custom-waf-lab',\
+    tag:'application-login',\
+    tag:'attack-brute-force',\
+    severity:'HIGH',\
+    chain"
+    SecRule IP:LOGIN_ATTEMPTS "@gt 10" \
+        "setvar:'tx.anomaly_score=+%{tx.critical_anomaly_score}',\
+        expirevar:IP:LOGIN_ATTEMPTS=300"
+
+# Initialize login attempt counter
+SecRule REQUEST_FILENAME "@streq /sql-test-app/login.php" \
+    "id:100013,\
+    phase:1,\
+    pass,\
+    nolog,\
+    setvar:'IP:LOGIN_ATTEMPTS=+1'"
+
+# =============================================================================
+# ANOMALY SCORING AND FINAL BLOCKING
+# =============================================================================
+
+# Correlation-based blocking - Final decision rule
+SecRule TX:ANOMALY_SCORE "@ge %{tx.inbound_anomaly_score_level}" \
+    "id:100099,\
+    phase:2,\
+    deny,\
+    msg:'Inbound Anomaly Score Exceeded (Total Score: %{TX.ANOMALY_SCORE})',\
+    logdata:'Total Inbound Score: %{TX.ANOMALY_SCORE} vs. Threshold: %{tx.inbound_anomaly_score_level}',\
+    tag:'custom-waf-lab',\
+    tag:'anomaly-evaluation',\
+    severity:'CRITICAL'"
+
+# Reset anomaly scores after request processing
+SecRule REQUEST_BASENAME "@rx \.(php|html|htm)$" \
+    "id:100100,\
+    phase:4,\
+    pass,\
+    nolog,\
+    setvar:'tx.anomaly_score=0',\
+    setvar:'tx.sql_injection_score=0'"
+
+# =============================================================================
+# RULE CONFIGURATION AND SETTINGS
+# =============================================================================
+
+# Custom rule configuration
+SecAction \
+    "id:100900,\
+    phase:1,\
+    nolog,\
+    pass,\
+    t:none,\
+    setvar:'tx.inbound_anomaly_score_level=10',\
+    setvar:'tx.critical_anomaly_score=5',\
+    setvar:'tx.error_anomaly_score=4',\
+    setvar:'tx.warning_anomaly_score=3',\
+    setvar:'tx.notice_anomaly_score=2'"
+
+# Content-Type validation for POST requests
+SecRule REQUEST_METHOD "@streq POST" \
+    "id:100901,\
+    phase:1,\
+    pass,\
+    msg:'Validating Content-Type for POST request',\
+    chain"
+    SecRule &REQUEST_HEADERS:Content-Type "@eq 0" \
+        "msg:'Missing Content-Type header in POST request',\
+        severity:'NOTICE',\
+        setvar:'tx.anomaly_score=+%{tx.notice_anomaly_score}'"
+
+# Debug logging for development (disable in production)
+SecRule REQUEST_HEADERS:User-Agent "@rx WAF-Test-Client" \
+    "id:100999,\
+    phase:1,\
+    pass,\
+    log,\
+    msg:'WAF Test Client Detected - Debug Mode Active',\
+    severity:'INFO',\
+    setenv:modsec_debug_log=1"
+
+# =============================================================================
+# RULE DOCUMENTATION
+# =============================================================================
+#
+# Rule Summary:
+# 100001-100010: SQL Injection detection rules
+# 100011-100013: Application-specific login protection
+# 100099-100100: Anomaly scoring and blocking
+# 100900-100901: Configuration and validation
+# 100999: Debug rule (development only)
+#
+# Severity Levels:
+# CRITICAL: 5 points
+# HIGH: 4 points  
+# MEDIUM: 3 points
+# NOTICE: 2 points
+# INFO: 1 point
+#
+# Blocking Threshold: 10 points total anomaly score
+#
+# =============================================================================

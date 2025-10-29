@@ -1,0 +1,198 @@
+# ModSecurity Main Configuration File
+# WAF Rule Development Lab - Primary Configuration
+
+# =============================================================================
+# MODSECURITY CORE CONFIGURATION
+# =============================================================================
+
+# Rule engine setup
+SecRuleEngine On
+
+# Request body handling
+SecRequestBodyAccess On
+SecRequestBodyLimit 13107200
+SecRequestBodyNoFilesLimit 131072
+SecRequestBodyInMemoryLimit 131072
+
+# Response body handling
+SecResponseBodyAccess On
+SecResponseBodyMimeType (null) text/html text/plain text/xml
+SecResponseBodyLimit 524288
+
+# File upload handling
+SecUploadDir /tmp
+SecUploadKeepFiles Off
+SecTmpDir /tmp
+SecDataDir /tmp
+
+# Audit log configuration
+SecAuditEngine RelevantOnly
+SecAuditLogRelevantStatus "^(?:5|4(?!04))"
+SecAuditLogParts ABIJDEFHZ
+SecAuditLogType Serial
+SecAuditLog /var/log/modsecurity/audit.log
+
+# Debug log configuration
+SecDebugLog /var/log/modsecurity/debug.log
+SecDebugLogLevel 0
+
+# =============================================================================
+# BASIC SETTINGS AND DEFAULTS
+# =============================================================================
+
+# Default rule actions
+SecDefaultAction "phase:1,log,auditlog,pass"
+SecDefaultAction "phase:2,log,auditlog,pass"
+
+# Unicode mapping
+SecUnicodeMapFile unicode.mapping 20127
+
+# =============================================================================
+# RULE INCLUSION ORDER
+# =============================================================================
+
+# 1. Include OWASP Core Rule Set configuration
+Include /etc/modsecurity/rules/crs-setup.conf
+
+# 2. Include OWASP CRS rules
+Include /etc/modsecurity/rules/REQUEST-901-INITIALIZATION.conf
+Include /etc/modsecurity/rules/REQUEST-905-COMMON-EXCEPTIONS.conf
+Include /etc/modsecurity/rules/REQUEST-910-IP-REPUTATION.conf
+Include /etc/modsecurity/rules/REQUEST-911-METHOD-ENFORCEMENT.conf
+Include /etc/modsecurity/rules/REQUEST-912-DOS-PROTECTION.conf
+Include /etc/modsecurity/rules/REQUEST-913-SCANNER-DETECTION.conf
+Include /etc/modsecurity/rules/REQUEST-920-PROTOCOL-ENFORCEMENT.conf
+Include /etc/modsecurity/rules/REQUEST-921-PROTOCOL-ATTACK.conf
+Include /etc/modsecurity/rules/REQUEST-930-APPLICATION-ATTACK-LFI.conf
+Include /etc/modsecurity/rules/REQUEST-931-APPLICATION-ATTACK-RFI.conf
+Include /etc/modsecurity/rules/REQUEST-932-APPLICATION-ATTACK-RCE.conf
+Include /etc/modsecurity/rules/REQUEST-933-APPLICATION-ATTACK-PHP.conf
+Include /etc/modsecurity/rules/REQUEST-941-APPLICATION-ATTACK-XSS.conf
+Include /etc/modsecurity/rules/REQUEST-942-APPLICATION-ATTACK-SQLI.conf
+Include /etc/modsecurity/rules/REQUEST-943-APPLICATION-ATTACK-SESSION-FIXATION.conf
+Include /etc/modsecurity/rules/REQUEST-949-BLOCKING-EVALUATION.conf
+Include /etc/modsecurity/rules/RESPONSE-950-DATA-LEAKAGES.conf
+Include /etc/modsecurity/rules/RESPONSE-951-DATA-LEAKAGES-SQL.conf
+Include /etc/modsecurity/rules/RESPONSE-952-DATA-LEAKAGES-JAVA.conf
+Include /etc/modsecurity/rules/RESPONSE-953-DATA-LEAKAGES-PHP.conf
+Include /etc/modsecurity/rules/RESPONSE-954-DATA-LEAKAGES-IIS.conf
+Include /etc/modsecurity/rules/RESPONSE-959-BLOCKING-EVALUATION.conf
+Include /etc/modsecurity/rules/RESPONSE-980-CORRELATION.conf
+
+# 3. Include custom WAF lab rules (our custom rules)
+Include /etc/modsecurity/rules/custom_sqli_rules.conf
+Include /etc/modsecurity/rules/enhanced_rules.conf
+
+# =============================================================================
+# CUSTOM CONFIGURATION DIRECTIVES
+# =============================================================================
+
+# Custom rule engine configuration
+SecAction \
+    "id:900000,\
+    phase:1,\
+    nolog,\
+    pass,\
+    t:none,\
+    setvar:'tx.paranoia_level=1',\
+    setvar:'tx.executing_paranoia_level=1',\
+    setvar:'tx.critical_anomaly_score=5',\
+    setvar:'tx.error_anomaly_score=4',\
+    setvar:'tx.warning_anomaly_score=3',\
+    setvar:'tx.notice_anomaly_score=2',\
+    setvar:'tx.inbound_anomaly_score_level=10',\
+    setvar:'tx.outbound_anomaly_score_level=5'"
+
+# GeoIP database configuration (if available)
+# SecGeoLookupDb /path/to/GeoIP.dat
+
+# =============================================================================
+# PERFORMANCE OPTIMIZATIONS
+# =============================================================================
+
+# Disable rule engine for static content
+<LocationMatch "\.(css|js|png|jpg|jpeg|gif|ico|woff|woff2|ttf|eot|svg)$">
+    SecRuleEngine Off
+</LocationMatch>
+
+# Reduce processing for health checks
+<Location /server-status>
+    SecRuleEngine Off
+</Location>
+
+# =============================================================================
+# APPLICATION-SPECIFIC EXCEPTIONS
+# =============================================================================
+
+# Allow specific content in certain parameters
+SecRuleUpdateTargetById 942100 "!ARGS:comment"
+SecRuleUpdateTargetById 942110 "!ARGS:description"
+
+# Disable specific rules that cause false positives for our app
+SecRuleRemoveById 920350  # Unusual character in parameter value
+
+# =============================================================================
+# DEBUGGING AND MONITORING SETTINGS
+# =============================================================================
+
+# Enable debug logging for specific IPs (development only)
+SecRule REMOTE_ADDR "@ipMatch 192.168.1.100" \
+    "id:900001,\
+    phase:1,\
+    pass,\
+    nolog,\
+    setvar:'tx.debug_mode=1'"
+
+SecRule TX:DEBUG_MODE "@eq 1" \
+    "id:900002,\
+    phase:1,\
+    pass,\
+    nolog,\
+    ctl:debugLogLevel=3"
+
+# =============================================================================
+# SECURITY HEADERS (Optional)
+# =============================================================================
+
+# Add security headers to responses
+Header always set X-Content-Type-Options nosniff
+Header always set X-Frame-Options DENY
+Header always set X-XSS-Protection "1; mode=block"
+Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"
+
+# =============================================================================
+# CONFIGURATION VALIDATION
+# =============================================================================
+
+# Validate configuration on startup
+SecRuleEngine DetectionOnly
+SecRule REQUEST_URI "@streq /modsec-test" \
+    "id:900099,\
+    phase:1,\
+    pass,\
+    log,\
+    msg:'ModSecurity configuration test - successful',\
+    severity:'INFO'"
+
+# Return to blocking mode after test
+SecRuleEngine On
+
+# =============================================================================
+# DOCUMENTATION
+# =============================================================================
+#
+# This configuration file:
+# 1. Enables ModSecurity with appropriate settings
+# 2. Includes OWASP CRS rules for comprehensive protection
+# 3. Includes custom WAF lab rules for SQL injection and other attacks
+# 4. Sets up proper logging and auditing
+# 5. Includes performance optimizations
+# 6. Provides debugging capabilities
+#
+# Important Notes:
+# - Adjust SecRequestBodyLimit based on application needs
+# - Tune anomaly scores based on false positive analysis
+# - Enable/disable specific rules as needed for your application
+# - Monitor logs regularly for security events and false positives
+#
+# =============================================================================
