@@ -1,0 +1,69 @@
+#!/bin/bash
+
+# WAF Lab - ModSecurity Installation Script
+# This script installs and configures ModSecurity WAF
+
+echo "Starting ModSecurity Installation..."
+
+# Install ModSecurity
+echo "Installing ModSecurity package..."
+sudo apt install -y libapache2-mod-security2
+
+# Backup original configuration
+echo "Backing up original ModSecurity config..."
+sudo cp /etc/modsecurity/modsecurity.conf-recommended /etc/modsecurity/modsecurity.conf.backup
+
+# Configure ModSecurity
+echo "Configuring ModSecurity..."
+sudo sed -i 's/SecRuleEngine DetectionOnly/SecRuleEngine On/' /etc/modsecurity/modsecurity.conf
+sudo sed -i 's/SecAuditLogParts ABIJDEFHZ/SecAuditLogParts ABCEFHJKZ/' /etc/modsecurity/modsecurity.conf
+sudo sed -i 's/SecAuditLogType Serial/SecAuditLogType Concurrent/' /etc/modsecurity/modsecurity.conf
+
+# Configure audit log directory
+sudo echo "SecAuditLogStorageDir /var/log/modsecurity" >> /etc/modsecurity/modsecurity.conf
+sudo echo "SecAuditLog /var/log/modsecurity/audit.log" >> /etc/modsecurity/modsecurity.conf
+
+# Create ModSecurity configuration directory
+sudo mkdir -p /etc/modsecurity/rules/activated_rules
+
+# Download OWASP Core Rule Set
+echo "Downloading OWASP Core Rule Set..."
+cd /tmp
+wget https://github.com/coreruleset/coreruleset/archive/refs/tags/v3.3.0.tar.gz
+tar -xzf v3.3.0.tar.gz
+sudo cp -r coreruleset-3.3.0/rules/* /etc/modsecurity/rules/
+sudo cp coreruleset-3.3.0/crs-setup.conf.example /etc/modsecurity/rules/crs-setup.conf
+
+# Configure Apache to use ModSecurity
+echo "Configuring Apache for ModSecurity..."
+
+# Create ModSecurity module configuration
+sudo cat > /etc/apache2/mods-available/security2.conf << 'EOL'
+<IfModule security2_module>
+    SecDataDir /var/cache/modsecurity
+    IncludeOptional /etc/modsecurity/*.conf
+    IncludeOptional /etc/modsecurity/rules/*.conf
+    IncludeOptional /etc/modsecurity/rules/activated_rules/*.conf
+</IfModule>
+EOL
+
+# Enable ModSecurity module
+sudo a2enmod security2
+
+# Restart Apache to apply changes
+echo "Restarting Apache..."
+sudo systemctl restart apache2
+
+# Verify installation
+echo "Verifying ModSecurity installation..."
+sudo apache2ctl -M | grep security2
+
+if [ $? -eq 0 ]; then
+    echo "ModSecurity installed successfully!"
+    echo "Module is enabled and running."
+else
+    echo "ModSecurity installation verification failed!"
+    exit 1
+fi
+
+echo "ModSecurity installation completed!"
