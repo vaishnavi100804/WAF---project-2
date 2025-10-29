@@ -1,0 +1,115 @@
+#!/bin/bash
+
+# WAF Lab - SQL Injection Attack Testing Script
+# Tests various SQL injection payloads against the vulnerable application
+
+echo "=================================================="
+echo "WAF Lab - SQL Injection Attack Testing"
+echo "=================================================="
+
+BASE_URL="http://localhost/sql-test-app"
+TEST_RESULTS=()
+
+# Color codes for output
+GREEN='\033[0;32m'
+RED='\033[0;31m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+# Function to print test result
+print_result() {
+    local test_name=$1
+    local status=$2
+    local message=$3
+    local payload=$4
+    
+    if [ "$status" == "BLOCKED" ]; then
+        echo -e "${GREEN}✓ BLOCKED${NC}: $test_name - $message"
+        TEST_RESULTS+=("BLOCKED:$test_name")
+    elif [ "$status" == "ALLOWED" ]; then
+        echo -e "${RED}✗ ALLOWED${NC}: $test_name - $message"
+        echo -e "  Payload: $payload"
+        TEST_RESULTS+=("ALLOWED:$test_name")
+    else
+        echo -e "${YELLOW}? UNKNOWN${NC}: $test_name - $message"
+        TEST_RESULTS+=("UNKNOWN:$test_name")
+    fi
+}
+
+# Function to test SQL injection payload
+test_sqli_payload() {
+    local test_name=$1
+    local payload=$2
+    local field=$3
+    
+    response=$(curl -s -w "%{http_code}" -o /tmp/sqli_response -d "$field=$payload&password=test" \
+              -H "Content-Type: application/x-www-form-urlencoded" \
+              "$BASE_URL/login.php")
+    
+    http_code=${response: -3}
+    response_body=$(cat /tmp/sqli_response)
+    
+    # Check if blocked by WAF (403) or successful (302 redirect or 200 with success message)
+    if [ "$http_code" == "403" ]; then
+        print_result "$test_name" "BLOCKED" "WAF correctly blocked the request" "$payload"
+    elif [[ "$http_code" == "302" ]] || [[ "$response_body" == *"dashboard"* ]] || [[ "$response_body" == *"success"* ]]; then
+        print_result "$test_name" "ALLOWED" "SQL Injection was successful" "$payload"
+    else
+        print_result "$test_name" "BLOCKED" "Request failed (possibly blocked)" "$payload"
+    fi
+}
+
+echo
+echo "1. Testing Basic SQL Injection Patterns"
+echo "--------------------------------------"
+
+# Classic tautology attack
+test_sqli_payload "Classic Tautology" "admin' OR '1'='1" "username"
+
+# Comment-based attack
+test_sqli_payload "Comment Bypass" "admin'--" "username"
+
+# Union-based attack
+test_sqli_payload "Union Select" "admin' UNION SELECT 1,2,3--" "username"
+
+# Additional tautology variations
+test_sqli_payload "OR 1=1" "admin' OR 1=1--" "username"
+test_sqli_payload "OR 'a'='a'" "admin' OR 'a'='a'--" "username"
+
+echo
+echo "2. Testing Advanced SQL Injection Techniques"
+echo "-------------------------------------------"
+
+# Time-based blind SQLi
+test_sqli_payload "Time-Based Blind" "admin' AND SLEEP(5)--" "username"
+
+# Boolean-based blind SQLi
+test_sqli_payload "Boolean-Based" "admin' AND 1=1--" "username"
+
+# Stacked queries
+test_sqli_payload "Stacked Queries" "admin'; DROP TABLE users--" "username"
+
+# Alternate quote types
+test_sqli_payload "Double Quotes" 'admin" OR "1"="1' "username"
+
+echo
+echo "3. Testing Obfuscation Techniques"
+echo "--------------------------------"
+
+# URL encoding
+test_sqli_payload "URL Encoded" "admin%27%20OR%20%271%27%3D%271" "username"
+
+# Double URL encoding
+test_sqli_payload "Double URL Encoded" "admin%2527%2520OR%2520%25271%2527%253D%25271" "username"
+
+# Mixed case
+test_sqli_payload "Mixed Case" "admin' oR '1'='1" "username"
+
+# Inline comments
+test_sqli_payload "Inline Comments" "admin'/*comment*/OR/*comment*/'1'='1" "username"
+
+echo
+echo "4. Testing Database-Specific Payloads"
+echo "------------------------------------"
+
+# MySQL
